@@ -1,0 +1,65 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                // Clone the repository from GitHub/GitLab
+                git url: 'https://github.com/your-username/your-repo.git', branch: 'main'
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                // Build the Docker image from Dockerfile
+                script {
+                    dockerImage = docker.build("your-dockerhub-username/your-app:latest")
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // Test the application (e.g., using a test script)
+                sh 'docker run --rm your-dockerhub-username/your-app:latest /path/to/test.sh'
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    // Docker login
+                    withCredentials([string(credentialsId: 'dockerhub-credentials', variable: 'DOCKERHUB_PASSWORD')]) {
+                        sh 'docker login -u your-dockerhub-username -p $DOCKERHUB_PASSWORD'
+                    }
+
+                    // Push the Docker image to Docker Hub
+                    dockerImage.push()
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                // SSH to the remote server and pull the latest Docker image
+                sshagent (credentials: ['ssh-credentials-id']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no user@your-remote-server-ip << EOF
+                    docker pull your-dockerhub-username/your-app:latest
+                    docker stop your-app || true
+                    docker rm your-app || true
+                    docker run -d --name your-app -p 80:80 your-dockerhub-username/your-app:latest
+                    EOF
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean up resources after the build
+            cleanWs()
+        }
+    }
+}
